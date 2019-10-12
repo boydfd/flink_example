@@ -1,43 +1,26 @@
 package wikiedits;
 
-import org.apache.avro.util.WeakIdentityHashMap;
-import org.apache.flink.api.common.functions.AggregateFunction;
-import org.apache.flink.api.common.functions.MapFunction;
-import org.apache.flink.api.common.serialization.SimpleStringSchema;
-import org.apache.flink.api.java.functions.KeySelector;
-import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.formats.avro.AvroDeserializationSchema;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.IterativeStream;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
-import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
-import org.apache.flink.streaming.api.datastream.WindowedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
-import org.apache.flink.streaming.api.windowing.assigners.EventTimeSessionWindows;
-import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
-import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
-import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer011;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer011;
-import org.apache.flink.streaming.connectors.kafka.Kafka011TableSource;
-import org.apache.flink.streaming.connectors.wikiedits.WikipediaEditEvent;
-import org.apache.flink.streaming.connectors.wikiedits.WikipediaEditsSource;
 
-import java.awt.*;
 import java.util.Properties;
 
 public class WikipediaAnalysis {
-    public static void main(String[] args) throws Exception {
+    void start(String server, String topic) throws Exception {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         Properties properties = new Properties();
-        properties.setProperty("bootstrap.servers", "localhost:9094");
+        properties.setProperty("bootstrap.servers", server);
 // only required for Kafka 0.8
 //        properties.setProperty("zookeeper.connect", "localhost:2181");
         properties.setProperty("group.id", "test");
         AvroDeserializationSchema<AvroHttpRequest> avroHttpRequestAvroSchema = AvroDeserializationSchema.forSpecific(AvroHttpRequest.class);
-        FlinkKafkaConsumer011<AvroHttpRequest> patternConsumer = new FlinkKafkaConsumer011<>("pattern", avroHttpRequestAvroSchema, properties);
+        FlinkKafkaConsumer011<AvroHttpRequest> patternConsumer = new FlinkKafkaConsumer011<>(topic, avroHttpRequestAvroSchema, properties);
 //        patternConsumer.setStartFromGroupOffsets();
         patternConsumer.setStartFromEarliest();
         DataStream<AvroHttpRequest> stream = env.addSource(patternConsumer);
@@ -62,23 +45,36 @@ public class WikipediaAnalysis {
 
 //                })
 //                .print();
-        SingleOutputStreamOperator<AvroHttpRequest> result = window
-                .window(TumblingEventTimeWindows.of(Time.seconds(10)))
-                .reduce((l, r) -> {
-                            long t = l.getRequestTime() + l.getRequestTime();
-                            r.setRequestTime(t);
-                            return r;
-                        }
+        IterativeStream<AvroHttpRequest> iteration = window.iterate();
+//        SingleOutputStreamOperator<AvroHttpRequest> result = window
+//                .window(TumblingEventTimeWindows.of(Time.seconds(10)))
+//                .reduce((l, r) -> {
+//                            long t = l.getRequestTime() + l.getRequestTime();
+//                            r.setRequestTime(t);
+//                            return r;
+//                        }
 //                        (key, context, iterator, out) -> {
 //                            AvroHttpRequest next = iterator.iterator().next();
 //                            out.collect(new Tuple3<ClientIdentifier, Long, AvroHttpRequest>(key, context.getEnd(), next));
 //
 //                        }
-                );
-        result
-                .print();
+//                ).iterate().closeWith();
+        DataStream<AvroHttpRequest> iterationBody = iteration.map(i -> i);
+        iterationBody.print();
+        iterationBody.map(i -> {
+            patternConsumer.close();
+            patternConsumer.cancel();
+            return i;
+        });
+        iteration.closeWith(iterationBody.filter(i -> false));
+//        result
+//                .print();
 //                .map((MapFunction<Tuple2<String, Long>, String>) Tuple2::toString)
 //                .addSink(new FlinkKafkaProducer011<>("0.0.0.0:9094", "wiki-result", new SimpleStringSchema()));
         env.execute();
+
+    }
+    public static void main(String[] args) throws Exception {
+        new WikipediaAnalysis().start("localhost:9094", "pattern");
     }
 }

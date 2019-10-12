@@ -64,7 +64,7 @@ public class Producer {
         envStream.execute();
     }
 
-    private static AvroHttpRequest buildFromId(ClientIdentifier id, Active yes, int i) {
+    public static AvroHttpRequest buildFromId(ClientIdentifier id, Active yes, int i) {
         return AvroHttpRequest.newBuilder()
                 .setEmployeeNames(
                         Collections.singletonList("boydfd")
