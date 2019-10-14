@@ -12,6 +12,7 @@ import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.formats.avro.AvroRowSerializationSchema;
 import org.apache.flink.formats.avro.typeutils.AvroSerializer;
+import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.filesystem.StreamingFileSink;
@@ -32,6 +33,7 @@ import java.util.List;
 public class Producer {
     public static void main(String[] args) throws Exception {
         StreamExecutionEnvironment envStream = StreamExecutionEnvironment.getExecutionEnvironment();
+        envStream.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
         getSchema();
 
         ClientIdentifier id = ClientIdentifier.newBuilder()
@@ -58,7 +60,21 @@ public class Producer {
                 buildFromId(id, Active.YES, 10000300),
                 buildFromId(id, Active.YES, 10000900),
                 buildFromId(id, Active.YES, 9999999),
-                buildFromId(id, Active.YES, 19999999)
+                buildFromId(id, Active.YES, 29999999),
+                buildFromId(id, Active.YES, 39999999),
+                buildFromId(id, Active.YES, 49999999),
+                buildFromId(id, Active.YES, 59999999),
+                buildFromId(id, Active.YES, 69999999),
+                buildFromId(id, Active.YES, 79999999),
+                buildFromId(id, Active.YES, 89999999),
+                buildFromId(id, Active.YES, 99999999),
+//                buildFromId(id, Active.YES, 109999999),
+//                buildFromId(id, Active.YES, 119999999),
+//                buildFromId(id, Active.YES, 129999999),
+//                buildFromId(id, Active.YES, 229999999),
+//                buildFromId(id, Active.YES, 329999999),
+//                buildFromId(id, Active.YES, 429999999),
+                buildFromId(id, Active.YES, 529999999)
         ));
 
         envStream.execute();
@@ -92,21 +108,18 @@ public class Producer {
                 .<String>forRowFormat(new Path("./test.txt"), new SimpleStringEncoder<>("UTF-8"))
                 .build();
         avroHttpRequestDataStreamSource
-                .assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<AvroHttpRequest>(Time.seconds(10)) {
-                    public long extractTimestamp(AvroHttpRequest event) {
-                        return event.getRequestTime();
-                    }
-                })
+                .assignTimestampsAndWatermarks(new WaterMark(Time.seconds(10)))
                 .keyBy(AvroHttpRequest::getClientIdentifier)
 //                .window(TumblingEventTimeWindows.of(Time.seconds(10)))
 //                .window(SlidingEventTimeWindows.of(Time.seconds(10), Time.seconds(5), Time.seconds(1)))
 //                .window(EventTimeSessionWindows.withGap(Time.seconds(10)))
-                .window(CustomerWindows.withWindowLength(1000))
-                .reduce((l, r) -> {
-                    long t = l.getRequestTime() + r.getRequestTime();
-                    r.setRequestTime(t);
-                    return r;
-                })
+//                .window(CustomerWindows.withWindowLength(1000))
+//                .reduce((l, r) -> {
+//                    long t = l.getRequestTime() + r.getRequestTime();
+//                    r.setRequestTime(t);
+//                    return r;
+//                })
+                .process(new TestProcess())
                 .map(AvroHttpRequest::toString)
                 .setParallelism(1)
                 .addSink(sink)

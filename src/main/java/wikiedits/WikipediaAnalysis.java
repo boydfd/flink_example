@@ -1,9 +1,11 @@
 package wikiedits;
 
 import org.apache.flink.formats.avro.AvroDeserializationSchema;
+import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.IterativeStream;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
 import org.apache.flink.streaming.api.windowing.time.Time;
@@ -14,6 +16,8 @@ import java.util.Properties;
 public class WikipediaAnalysis {
     void start(String server, String topic) throws Exception {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
+        env.getConfig().setAutoWatermarkInterval(1);
         Properties properties = new Properties();
         properties.setProperty("bootstrap.servers", server);
 // only required for Kafka 0.8
@@ -26,7 +30,7 @@ public class WikipediaAnalysis {
         DataStream<AvroHttpRequest> stream = env.addSource(patternConsumer);
 //        KeyedStream<AvroHttpRequest, ClientIdentifier> keyedAvroHttp = stream
 
-        KeyedStream<AvroHttpRequest, ClientIdentifier> window = stream
+        SingleOutputStreamOperator<AvroHttpRequest> window = stream
                 .assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<AvroHttpRequest>(Time.seconds(10)) {
                     @Override
                     public long extractTimestamp(AvroHttpRequest event) {
@@ -34,6 +38,7 @@ public class WikipediaAnalysis {
                     }
                 })
                 .keyBy(AvroHttpRequest::getClientIdentifier)
+                .process(new TestProcess())
 //                .timeWindow(Time.seconds(5))
 //                .window(CustomerWindows.withWindowLength(1000))
 //                .window(EventTimeSessionWindows.withGap(Time.seconds(10)))
@@ -45,7 +50,6 @@ public class WikipediaAnalysis {
 
 //                })
 //                .print();
-        IterativeStream<AvroHttpRequest> iteration = window.iterate();
 //        SingleOutputStreamOperator<AvroHttpRequest> result = window
 //                .window(TumblingEventTimeWindows.of(Time.seconds(10)))
 //                .reduce((l, r) -> {
@@ -59,14 +63,6 @@ public class WikipediaAnalysis {
 //
 //                        }
 //                ).iterate().closeWith();
-        DataStream<AvroHttpRequest> iterationBody = iteration.map(i -> i);
-        iterationBody.print();
-        iterationBody.map(i -> {
-            patternConsumer.close();
-            patternConsumer.cancel();
-            return i;
-        });
-        iteration.closeWith(iterationBody.filter(i -> false));
 //        result
 //                .print();
 //                .map((MapFunction<Tuple2<String, Long>, String>) Tuple2::toString)
